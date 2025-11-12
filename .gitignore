@@ -1,0 +1,52 @@
+# 构建目录
+build/
+cmake-build-*/
+Debug/
+Release/
+*.dir/
+
+# 编译产物
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+*.pdb
+
+# gRPC生成的文件
+*.pb.cc
+*.pb.h
+*.grpc.pb.cc
+*.grpc.pb.h
+
+# 临时文件
+*.tmp
+*.temp
+*~
+
+# 日志文件
+*.log
+
+# IDE相关
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 其他常见的C++项目中间文件
+Makefile.in
+config.log
+config.status
+autom4te.cache/
+.deps/
+.libs/
+
+# 已存在的忽略规则
+build/
