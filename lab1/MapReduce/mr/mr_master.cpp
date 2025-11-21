@@ -50,8 +50,8 @@ public:
         return Status::OK;
     }
     Status report_task(ServerContext* context, const TaskResponse* request, Empty* response) override{
-        if(request->type() == TaskType::MAP_TASK){
-            if(request.task_type() == part_time){
+        if(request->task_type() == TaskType::MAP_TASK){
+            if(request->task_type() == part_time){
                 tasks[request->task_id()].task_state = TaskState::TASK_DONE;
             } else {
                 return Status::CANCELLED;

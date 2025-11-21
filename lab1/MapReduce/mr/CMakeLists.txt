@@ -66,6 +66,14 @@ set(hw_proto_srcs
 add_library(hw_grpc_proto ${hw_proto_srcs})
 add_dependencies(hw_grpc_proto GenerateProtoFiles)
 
+# 创建tools.dll
+add_library(tools SHARED tools.cpp)
+# 设置输出目录
+set_target_properties(tools PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
 target_link_libraries(hw_grpc_proto
     ${_REFLECTION}
     ${_GRPC_GRPCPP}
@@ -77,8 +85,15 @@ foreach(_target mr_master mr_worker)
     add_executable(${_target} "${_target}.cpp")
     target_link_libraries(${_target}
         hw_grpc_proto
+        tools  # 链接到tools库
         ${_REFLECTION}
         ${_GRPC_GRPCPP}
         ${_PROTOBUF_LIBPROTOBUF}
+    )
+    # 复制DLL到可执行文件目录
+    add_custom_command(TARGET ${_target} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:tools>
+        $<TARGET_FILE_DIR:${_target}>
     )
 endforeach()
