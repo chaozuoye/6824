@@ -6,7 +6,9 @@
 #include <grpcpp/client_context.h>
 #include <grpcpp/create_channel.h>
 #include <grpcpp/security/credentials.h>
-#include <windows.h>
+
+#include <unistd.h>
+#include <dlfcn.h>
 #include <vector>
 #include <map>
 #include <fstream>
@@ -225,7 +227,7 @@ public:
             {
                 std::cout << "No task." << std::endl;
             }
-            Sleep(1000);
+            sleep(1);
         }
     }
     MapFunc mapF;
@@ -238,28 +240,38 @@ private:
 int main(int argc, char **argv)
 {
     Worker worker(grpc::CreateChannel("localhost:50051", grpc::InsecureChannelCredentials()));
-    HMODULE handle = LoadLibraryW(L"./tools.dll");
+    void* handle = dlopen("./libtools.so", RTLD_LAZY);
     if (!handle)
     {
-        DWORD errorCode = GetLastError();
-        std::cerr << "Cannot open library, error code: " << errorCode << std::endl;
+        std::cerr << "Cannot open library: " << dlerror() << std::endl;
         exit(-1);
     }
-    // Windows下转换函数指针需要特殊处理 
-    FARPROC mapProc = GetProcAddress(handle, "map_f");
-    FARPROC reduceProc = GetProcAddress(handle, "reduce_f");
-
-    if (!mapProc || !reduceProc)
-    {
-        std::cerr << "Cannot load symbols:" << std::endl;
-        if (!mapProc) std::cerr << "  map_f not found" << std::endl;
-        if (!reduceProc) std::cerr << "  reduce_f not found" << std::endl;
-        FreeLibrary(handle);
+    
+    // 清除之前可能存在的错误
+    dlerror();
+    
+    MapFunc mapProc = (MapFunc) dlsym(handle, "map_f");
+    const char* dlsym_error = dlerror();
+    if (dlsym_error) {
+        std::cerr << "Cannot load symbol 'map_f': " << dlsym_error << std::endl;
+        dlclose(handle);
+        exit(-1);
+    }
+    
+    dlerror();
+    ReduceFunc reduceProc = (ReduceFunc) dlsym(handle, "reduce_f");
+    dlsym_error = dlerror();
+    if (dlsym_error) {
+        std::cerr << "Cannot load symbol 'reduce_f': " << dlsym_error << std::endl;
+        dlclose(handle);
         exit(-1);
     }
 
-    worker.mapF = reinterpret_cast<MapFunc>(mapProc);
-    worker.reduceF = reinterpret_cast<ReduceFunc>(reduceProc);
+    worker.mapF = mapProc;
+    worker.reduceF = reduceProc;
     worker.Run();
+    
+    // 关闭动态库
+    dlclose(handle);
     return 0;
 }

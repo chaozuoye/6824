@@ -45,7 +45,6 @@ add_custom_command(
     VERBATIM
 )
 
-# 创建自定义目标（修改这部分）
 add_custom_target(GenerateProtoFiles ALL DEPENDS
     "${GENERATED_PROTOBUF_PATH}/map_reduce.pb.cc"
     "${GENERATED_PROTOBUF_PATH}/map_reduce.pb.h"
@@ -53,22 +52,19 @@ add_custom_target(GenerateProtoFiles ALL DEPENDS
     "${GENERATED_PROTOBUF_PATH}/map_reduce.grpc.pb.h"
 )
 
-# 包含生成的文件目录
 include_directories(${GENERATED_PROTOBUF_PATH})
 
-# 定义源文件
 set(hw_proto_srcs 
     "${GENERATED_PROTOBUF_PATH}/map_reduce.pb.cc"
     "${GENERATED_PROTOBUF_PATH}/map_reduce.grpc.pb.cc"
 )
 
-# 创建 gRPC 协议库
 add_library(hw_grpc_proto ${hw_proto_srcs})
 add_dependencies(hw_grpc_proto GenerateProtoFiles)
 
-# 创建tools.dll
+
 add_library(tools SHARED tools.cpp)
-# 设置输出目录
+
 set_target_properties(tools PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
@@ -80,17 +76,22 @@ target_link_libraries(hw_grpc_proto
     ${_PROTOBUF_LIBPROTOBUF}
 )
 
-# 创建可执行文件
+target_link_libraries(tools
+    ${CMAKE_DL_LIBS}
+)
+
+
 foreach(_target mr_master mr_worker)
     add_executable(${_target} "${_target}.cpp")
     target_link_libraries(${_target}
         hw_grpc_proto
-        tools  # 链接到tools库
+        tools  
         ${_REFLECTION}
         ${_GRPC_GRPCPP}
         ${_PROTOBUF_LIBPROTOBUF}
+        ${CMAKE_DL_LIBS}
     )
-    # 复制DLL到可执行文件目录
+
     add_custom_command(TARGET ${_target} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         $<TARGET_FILE:tools>

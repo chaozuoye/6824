@@ -1,6 +1,5 @@
 #include "include/map_reduce.grpc.pb.h"
 #include "include/map_reduce.pb.h"
-#include "include/mr_common.h"
 #include <iostream>
 #include <memory>
 #include <string>
@@ -10,6 +9,8 @@
 #include <grpcpp/server_context.h>
 #include <grpcpp/security/server_credentials.h>
 #include <queue>
+// 添加unistd.h头文件以支持sleep函数
+#include <unistd.h>
 using namespace mapreduce;
 using namespace grpc;
 
@@ -112,7 +113,7 @@ public:
                 all_done_ = false;
                 InitReduceTask();
             }
-            Sleep(1000);
+            sleep(1);
         }
     }
 private:
@@ -122,7 +123,6 @@ private:
     bool all_done_ = false;
     std::vector<Task> tasks;
 };
-
 
 int main(int argc, char** argv) {
     if (argc != 2) {

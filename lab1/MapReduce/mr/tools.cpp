@@ -11,11 +11,14 @@
 #else
     #define TOOLS_API __attribute__((visibility("default")))
 #endif
+
+// 定义KeyValue类
 class KeyValue{
 public:
     std::string key;
     std::string value;
 };
+
 extern "C" {
     TOOLS_API std::vector<KeyValue> map_f(const std::string& filename) {
         std::vector<KeyValue> result;
@@ -41,7 +44,7 @@ extern "C" {
             }
         }
         
-
+        // 处理文件末尾的单词
         if (!currentWord.empty()) {
             kv.key = currentWord;
             kv.value = "1";
