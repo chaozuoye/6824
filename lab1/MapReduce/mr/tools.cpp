@@ -32,7 +32,7 @@ extern "C" {
         std::string currentWord;
         KeyValue kv;
         while(file.get(c)) {
-            if (isalnum(c)) {
+            if (std::isalpha(c)) {  // 只处理字母字符
                 currentWord += c;
             } else {
                 if (!currentWord.empty()) {

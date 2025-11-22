@@ -6,7 +6,6 @@
 #include <grpcpp/client_context.h>
 #include <grpcpp/create_channel.h>
 #include <grpcpp/security/credentials.h>
-
 #include <unistd.h>
 #include <dlfcn.h>
 #include <vector>
@@ -64,6 +63,12 @@ public:
         ClientContext context;
 
         std::vector<KeyValue> map_output = mapF(map_task.filename());
+        if (map_output.empty())
+        {
+            std::cerr << "Map function returned empty result for file: " << map_task.filename() << std::endl;
+            report(map_task, TaskState::FAILED);
+            return;
+        }
         std::vector<std::vector<KeyValue>> grouped_data(map_task.num_reduce());
         for (const KeyValue &kv : map_output)
         {
@@ -81,8 +86,8 @@ public:
                 writeIntermediate(filename, grouped_data[reduce_id]);
             }
         }
-
-        report(map_task);
+        sleep(5); // 为测试worker崩溃，特意加的延时
+        report(map_task, TaskState::TASK_DONE);
     }
     void doReduceTask(TaskResponse reduce_task)
     {
@@ -121,21 +126,23 @@ public:
             reduce_output[key] = {value};
         }
         writeReduceResult(generateReduceResultFileName(reduce_task.task_id()), reduce_output);
-        report(reduce_task);
+        report(reduce_task, TaskState::TASK_DONE);
     }
-    void report(TaskResponse task)
+    void report(TaskResponse task, TaskState task_status)
     {
         TaskResponse request;
         Empty reply;
         ClientContext context;
         request.set_task_type(task.task_type());
         request.set_task_id(task.task_id());
+        request.set_task_state(task_status);
         Status status = stub_->report_task(&context, request, &reply);
 
         int count = 0;
         while (!status.ok() && count < 5)
         {
-            status = stub_->report_task(&context, request, &reply);
+            ClientContext retry_context; // 重试时也创建新的context
+            status = stub_->report_task(&retry_context, request, &reply);
             count++;
         }
         if (!status.ok())
@@ -153,10 +160,10 @@ public:
             std::cerr << "Failed to create output file: " << filename << std::endl;
             return;
         }
-
+        // std::map已经按键排序，直接遍历即可
         for (const auto &entry : reduce_output)
         {
-            outfile << entry.first << " " << (entry.second)[0] << std::endl;
+            outfile << entry.first << ": " << (entry.second)[0] << std::endl;
         }
 
         outfile.close();
@@ -218,10 +225,15 @@ public:
                 return;
             }
             if (reply.task_type() == TaskType::MAP_TASK) {
+                std::cout << "Get MAP_TASK ID: " << reply.task_id() << std::endl;
+
                 doMapTask(reply);
+                std::cout << "Completed MAP_TASK ID: " << reply.task_id() << std::endl;
             }
             else if (reply.task_type() == TaskType::REDUCE_TASK) {
+                std::cout << "Get REDUCE_TASK ID: " << reply.task_id() << std::endl;
                 doReduceTask(reply);
+                std::cout << "Completed REDUCE_TASK ID: " << reply.task_id() << std::endl;
             }
             else
             {
@@ -240,38 +252,57 @@ private:
 int main(int argc, char **argv)
 {
     Worker worker(grpc::CreateChannel("localhost:50051", grpc::InsecureChannelCredentials()));
-    void* handle = dlopen("./libtools.so", RTLD_LAZY);
-    if (!handle)
-    {
-        std::cerr << "Cannot open library: " << dlerror() << std::endl;
-        exit(-1);
-    }
     
-    // 清除之前可能存在的错误
-    dlerror();
-    
-    MapFunc mapProc = (MapFunc) dlsym(handle, "map_f");
-    const char* dlsym_error = dlerror();
-    if (dlsym_error) {
-        std::cerr << "Cannot load symbol 'map_f': " << dlsym_error << std::endl;
-        dlclose(handle);
-        exit(-1);
-    }
-    
-    dlerror();
-    ReduceFunc reduceProc = (ReduceFunc) dlsym(handle, "reduce_f");
-    dlsym_error = dlerror();
-    if (dlsym_error) {
-        std::cerr << "Cannot load symbol 'reduce_f': " << dlsym_error << std::endl;
-        dlclose(handle);
-        exit(-1);
-    }
+    // 获取可执行文件所在目录
+    char* exe_path = realpath(argv[0], NULL);
+    if (exe_path) {
+        std::string exe_dir(exe_path);
+        size_t pos = exe_dir.find_last_of('/');
+        if (pos != std::string::npos) {
+            exe_dir = exe_dir.substr(0, pos);
+        }
+        free(exe_path);
+        
+        // 构造库文件的绝对路径
+        std::string lib_path = exe_dir + "/libtools.so";
+        void* handle = dlopen(lib_path.c_str(), RTLD_LAZY);
+        
+        if (!handle)
+        {
+            std::cerr << "Cannot open library: " << dlerror() << std::endl;
+            exit(-1);
+        }
+        
+        // 清除之前可能存在的错误
+        dlerror();
+        
+        MapFunc mapProc = (MapFunc) dlsym(handle, "map_f");
+        const char* dlsym_error = dlerror();
+        if (dlsym_error) {
+            std::cerr << "Cannot load symbol 'map_f': " << dlsym_error << std::endl;
+            dlclose(handle);
+            exit(-1);
+        }
+        
+        dlerror();
+        ReduceFunc reduceProc = (ReduceFunc) dlsym(handle, "reduce_f");
+        dlsym_error = dlerror();
+        if (dlsym_error) {
+            std::cerr << "Cannot load symbol 'reduce_f': " << dlsym_error << std::endl;
+            dlclose(handle);
+            exit(-1);
+        }
 
-    worker.mapF = mapProc;
-    worker.reduceF = reduceProc;
-    worker.Run();
+        worker.mapF = mapProc;
+        worker.reduceF = reduceProc;
+        worker.Run();
+        
+        // 关闭动态库
+        dlclose(handle);
+    } else {
+        std::cerr << "Cannot determine executable path" << std::endl;
+        exit(-1);
+    }
     
-    // 关闭动态库
-    dlclose(handle);
     return 0;
 }

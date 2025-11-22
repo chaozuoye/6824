@@ -12,6 +12,7 @@ enum TaskState {
     TASK_IDLE = 0;   // 未分配
     TASK_IN_PROGRESS = 1;  // 执行中
     TASK_DONE = 2;      // 已完成
+    FAILED = 3;
 }
 // 任务类型：Map或Reduce
 enum TaskType {
@@ -26,6 +27,7 @@ message TaskResponse{
     int32 num_map = 3;
     int32 num_reduce = 4;       // Reduce任务总数（用于哈希分片）
     TaskType task_type = 5;
+    TaskState task_state = 6;
 }
 service MasterService{
     rpc getTask(Empty) returns (TaskResponse) {}
