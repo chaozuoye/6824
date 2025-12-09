@@ -1,0 +1,75 @@
+// raft.proto
+// 定义 Raft 一致性算法的 gRPC 服务和消息格式
+syntax = "proto3";
+
+package raft;
+
+// Raft 服务定义，包含 Raft 算法所需的三个 RPC 接口
+service RaftService {
+  // 请求投票 RPC：候选者用来发起选举请求
+  rpc RequestVote(RequestVoteRequest) returns (RequestVoteResponse);
+  // 追加条目 RPC：领导者用来复制日志条目，也用作心跳机制
+  rpc AppendEntries(AppendEntriesRequest) returns (AppendEntriesResponse);
+  // 安装快照 RPC：领导者用来发送快照给落后的跟随者
+  rpc InstallSnapshot(InstallSnapshotRequest) returns (InstallSnapshotResponse);
+}
+
+// 节点角色枚举
+enum Role {
+  FOLLOWER = 0;      // 跟随者
+  CANDIDATE = 1;   // 候选者
+  LEADER = 2;      // 领导者
+}
+
+// 请求投票请求消息
+message RequestVoteRequest {
+  int32 term = 1;              // 候选者的任期
+  int32 candidate_id = 2;      // 候选者的 ID
+  int32 last_log_index = 3;    // 候选者最后一条日志的索引
+  int32 last_log_term = 4;     // 候选者最后一条日志的任期
+}
+
+// 请求投票响应消息
+message RequestVoteResponse {
+  int32 term = 1;              // 当前节点的任期（用于更新候选者）
+  bool vote_granted = 2;       // 是否授予投票
+}
+
+// 日志条目消息
+message LogEntry {
+  int32 term = 1;              // 日志条目的任期
+  string command = 2;           // 状态机命令
+  int32 index = 3;             // 日志条目的索引
+}
+
+// 追加条目请求消息
+message AppendEntriesRequest {
+  int32 term = 1;              // 领导者的任期
+  int32 leader_id = 2;         // 领导者的 ID，便于跟随者重定向请求
+  int32 prev_log_index = 3;    // 新条目前面紧邻条目的索引
+  int32 prev_log_term = 4;     // 新条目前面紧邻条目的任期
+  repeated LogEntry entries = 5; // 要存储的日志条目（为空时代表心跳）
+  int32 leader_commit = 6;     // 领导者的已提交日志索引
+}
+
+// 追加条目响应消息
+message AppendEntriesResponse {
+  int32 term = 1;              // 当前节点的任期（用于更新领导者）
+  bool success = 2;            // 如果跟随者匹配了 prev_log_index 和 prev_log_term 则为 true
+  int32 conflict_index = 3;    // 冲突条目的索引（优化日志复制）
+  int32 conflict_term = 4;     // 冲突条目的任期（优化日志复制）
+}
+
+// 安装快照请求消息
+message InstallSnapshotRequest {
+  int32 term = 1;                      // 领导者的任期
+  int32 leader_id = 2;                 // 领导者的 ID
+  int32 last_included_index = 3;       // 快照中包含的最后条目的索引
+  int32 last_included_term = 4;        // 快照中包含的最后条目的任期
+  bytes data = 5;                      // 快照数据
+}
+
+// 安装快照响应消息
+message InstallSnapshotResponse {
+  int32 term = 1;                      // 当前节点的任期（用于更新领导者）
+}
