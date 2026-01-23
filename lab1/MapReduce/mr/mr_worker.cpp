@@ -273,9 +273,6 @@ int main(int argc, char **argv)
             exit(-1);
         }
         
-        // 清除之前可能存在的错误
-        dlerror();
-        
         MapFunc mapProc = (MapFunc) dlsym(handle, "map_f");
         const char* dlsym_error = dlerror();
         if (dlsym_error) {
@@ -284,7 +281,6 @@ int main(int argc, char **argv)
             exit(-1);
         }
         
-        dlerror();
         ReduceFunc reduceProc = (ReduceFunc) dlsym(handle, "reduce_f");
         dlsym_error = dlerror();
         if (dlsym_error) {

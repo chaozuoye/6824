@@ -12,6 +12,15 @@ service RaftService {
   rpc AppendEntries(AppendEntriesRequest) returns (AppendEntriesResponse);
   // 安装快照 RPC：领导者用来发送快照给落后的跟随者
   rpc InstallSnapshot(InstallSnapshotRequest) returns (InstallSnapshotResponse);
+  // 发送命令的 RPC 接口
+  rpc SendCommand(CommandRequest) returns (CommandResponse);
+}
+message CommandRequest {
+  string command = 1;
+}
+message CommandResponse {
+  bool success = 1;
+  int32 leader_id = 2;
 }
 
 // 节点角色枚举

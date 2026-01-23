@@ -86,3 +86,28 @@ target_include_directories(raft
 if(TARGET nlohmann_json::nlohmann_json)
     target_link_libraries(raft nlohmann_json::nlohmann_json)
 endif()
+
+# 创建客户端可执行文件
+add_executable(raft_client
+    client.cpp
+    ${PROTO_SRCS}
+)
+
+# 链接库
+target_link_libraries(raft_client
+    gRPC::grpc++
+    gRPC::grpc
+    protobuf::libprotobuf
+)
+
+# 包含目录
+target_include_directories(raft_client
+    PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# 如果通过FetchContent获取了nlohmann_json，则链接它
+if(TARGET nlohmann_json::nlohmann_json)
+    target_link_libraries(raft_client nlohmann_json::nlohmann_json)
+endif()
