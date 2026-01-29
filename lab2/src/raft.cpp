@@ -69,6 +69,9 @@ Raft::Raft(int me, const std::string& configFile)
     // 初始化心跳时间
     last_heartbeat_ = std::chrono::steady_clock::now();
     
+    // 尝试从持久化存储中恢复状态
+    read_persist();
+
     // 启动定时器线程
     ticker_thread_ = std::thread(&Raft::ticker, this);
 }
@@ -103,6 +106,95 @@ void Raft::ticker() {
                     std::cout <<"Node "<<me_ <<": Sent heartbeat" << std::endl;
                 }
             }
+        }
+    }
+}
+
+void Raft::persist() {
+    // 将Raft状态序列化为字符串
+    std::ostringstream oss;
+    std::ofstream out("raft_"+std::to_string(me_)+".txt");
+    // 保存当前任期
+    oss << current_term_ << "\n";
+    
+    // 保存voted_for (-1表示null)
+    oss << voted_for_ << "\n";
+    
+    // 保存日志条目数量
+    oss << log_.size() << "\n";
+    
+    // 保存每条日志
+    for (const auto& entry : log_) {
+        oss << entry.term() << " " << entry.index() << " " << entry.command() << "\n";
+    }
+    
+    // 创建持久化实例并保存状态
+    out.write(oss.str().c_str(), oss.str().size());
+    out.close();
+}
+
+
+void Raft::read_persist() {
+    std::string filename = "raft_" + std::to_string(me_) + ".txt";
+    std::ifstream file(filename, std::ios::in | std::ios::binary);
+    
+    if (!file.is_open()) {
+        // 文件不存在，保持初始化值
+        return;
+    }
+    
+    std::string state((std::istreambuf_iterator<char>(file)), 
+                     std::istreambuf_iterator<char>());
+    file.close();
+    
+    if (state.empty()) {
+        // 没有持久化状态，保持初始化值
+        return;
+    }
+    
+    std::istringstream iss(state);
+    std::string line;
+    
+    // 读取当前任期
+    if (std::getline(iss, line)) {
+        current_term_ = std::stoi(line);
+    }
+    
+    // 读取voted_for
+    if (std::getline(iss, line)) {
+        voted_for_ = std::stoi(line);
+    }
+    
+    // 读取日志条目数量
+    size_t log_size = 0;
+    if (std::getline(iss, line)) {
+        log_size = std::stoul(line);
+    }
+    
+    // 清空现有日志
+    log_.clear();
+    log_.reserve(log_size);
+    
+    // 读取每条日志
+    for (size_t i = 0; i < log_size; i++) {
+        if (std::getline(iss, line)) {
+            std::istringstream line_ss(line);
+            int term, index;
+            std::string command;
+            
+            line_ss >> term >> index;
+            // 读取命令（可能包含空格）
+            std::getline(line_ss, command);
+            if (!command.empty() && command[0] == ' ') {
+                command = command.substr(1);  // 移除开头的空格
+            }
+            
+            LogEntry entry;
+            entry.set_term(term);
+            entry.set_index(index);
+            entry.set_command(command);
+            
+            log_.push_back(entry);
         }
     }
 }
@@ -150,7 +242,7 @@ void Raft::startElection() {
     current_term_++;
     voted_for_ = me_;
     role_ = Role::CANDIDATE;
-    
+    persist(); // 持久化状态
     // 创建RequestVote请求
     RequestVoteRequest request;
     request.set_term(current_term_);
@@ -215,6 +307,7 @@ void Raft::become_follower(int term) {
     std::cout << "Node " << me_ << ": Becoming follower for term " << term << std::endl;
     current_term_ = term;
     voted_for_ = -1;
+    persist(); // 持久化状态
     last_heartbeat_ = std::chrono::steady_clock::now();
 }
 
@@ -227,25 +320,6 @@ void Raft::become_leader(){
 
     // 发送初始心跳以建立领导者地位
     sendHeartbeatsAsync();
-}
-
-std::tuple<int, int, bool> Raft::Start(const std::string& command) {
-    // Implementation of Start method
-    // if (role_ == Role::LEADER) {
-    //     // 领导者处理请求
-    //     int index = log_.size();
-    //     log_.emplace_back(command, index, current_term_);
-        
-    //     // 创建AppendEntries请求
-    //     AppendEntriesRequest request;
-    //     request.set_term(current_term_);
-    //     request.set_leader_id(me_);
-    //     request.set_prev_log_index(index - 1);
-    // } else {
-    //     // 非领导者处理请求
-    //     return {0, 0, false};
-    // }
-    return {};
 }
 
 std::pair<int, bool> Raft::GetState() {
@@ -309,6 +383,7 @@ grpc::Status Raft::RequestVote(grpc::ServerContext* context,
         voted_for_ = request->candidate_id();
         response->set_term(current_term_);
         response->set_vote_granted(true);
+        persist(); // 持久化投票状态
     } else {
         std::cout << "Node " << me_ << ": Reject vote - ";
         if (alreadyVoted) {
@@ -382,6 +457,7 @@ grpc::Status Raft::AppendEntries(grpc::ServerContext* context,
         
         // 删除冲突的日志条目
         log_.erase(log_.begin() + conflict_index, log_.end());
+        persist(); // 持久化日志状态
         std::cout << "Node " << me_ << ": Removed conflicting log entries" << std::endl;
         return Status::OK;
     }
@@ -394,6 +470,7 @@ grpc::Status Raft::AppendEntries(grpc::ServerContext* context,
         // 追加新条目
         log_.push_back(entry);
     }
+    persist(); // 持久化日志状态
     std::cout << "Node " << me_ << ": Appended log entry from leader " << request->leader_id() << std::endl;
     // 打印当前所有日志
     printLog();
@@ -459,7 +536,7 @@ grpc::Status Raft::handleCommandAsLeader(const raft::CommandRequest* request,
     new_entry.set_term(current_term_);
     
     log_.push_back(new_entry);
-    //persist();  // 持久化日志
+    persist();  // 持久化日志
     
      // 线程启动日志复制流程
     std::thread([this, new_entry]() {

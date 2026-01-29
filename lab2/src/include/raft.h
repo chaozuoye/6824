@@ -8,14 +8,6 @@
 #include <grpcpp/grpcpp.h>
 #include "raft.grpc.pb.h"
 using namespace raft;
-// #include "persister.h"
-
-// 日志条目结构体，表示 Raft 日志中的单个条目
-// struct LogEntry {
-//   int term;           // 条目所在的任期
-//   std::string command; // 状态机命令
-//   int index;          // 条目在日志中的索引
-// };
 
 // Raft 类实现 Raft 一致性算法
 class Raft : public raft::RaftService::Service {
@@ -25,8 +17,6 @@ public:
 
     ~Raft();
 
-    // 对外接口
-    std::tuple<int, int, bool> Start(const std::string& command);  // 客户端启动一个新的日志条目
     std::pair<int, bool> GetState();  // 获取当前节点的状态（任期和是否为领导者）
     void Kill();                      // 关闭该 Raft 节点
     void startElection();
