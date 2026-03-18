@@ -6,8 +6,8 @@
 #include <random>
 #include <iostream>
 #include <unistd.h>
+#include <memory>
 #include <nlohmann/json.hpp>
-#include "raft.h"
 
 using namespace raft;
 using namespace grpc;
@@ -71,6 +71,8 @@ Raft::Raft(int me, const std::string& configFile)
     
     // 尝试从持久化存储中恢复状态
     read_persist();
+
+    apply_ch_ = std::make_shared<ApplyChannel>();
 
     // 启动定时器线程
     ticker_thread_ = std::thread(&Raft::ticker, this);
@@ -485,6 +487,38 @@ grpc::Status Raft::AppendEntries(grpc::ServerContext* context,
     printLog();
     return Status::OK;
 }
+
+int Raft::Start(std::string command, std::string key, std::string value) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    if(role_ != Role::LEADER) {
+        std::cout << "Node " << me_ << ": Cannot start command - not leader" << std::endl;
+        return -1;
+    }
+
+    // 构造完整的命令
+    std::string full_command = command + " " + key + " " + value;
+    if (!value.empty()) {
+        full_command += " ";
+        full_command += value;
+    }
+
+    // 创建日志条目
+    LogEntry entry;
+    entry.set_command(full_command);
+    entry.set_term(current_term_);
+    entry.set_index(log_.size());
+    log_.push_back(entry);
+    persist();
+    std::cout << "Node " << me_ << ": Started command " << full_command << std::endl;
+
+    printLog();
+    // 异步复制日志
+    std::thread([this,log_index = entry.index()](){
+        replicateLogEntry(log_index);
+    }).detach();
+    return  entry.index();
+}
 void Raft::printLog() {
     std::cout << "Log: ";
     for (const auto& entry : log_) {
@@ -519,18 +553,6 @@ grpc::Status Raft::SendCommand(grpc::ServerContext* context,
         }
     }
     
-    // 不知道领导者，短暂等待后再次检查
-    for (int i = 0; i < 5; ++i) {
-        std::cout << "Node " << me_ << ": Waiting for leader to be known" << std::endl;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (leader_id_ != -1) {
-                return forwardCommandToLeader(leader_id_, request, response);
-            }
-        }
-    }
-    
-
     response->set_success(false);
     response->set_leader_id(-1);
     return Status::CANCELLED;
@@ -668,6 +690,12 @@ void Raft::applyCommittedLogs() {
             // 在这里应用日志到状态机
             std::cout << "Node " << me_ << ": Applying log entry " << i 
                       << " with command: " << log_[i].command() << std::endl;
+            
+            ApplyMsg msg;
+            msg.command = log_[i].command();
+            msg.command_index = i;
+            apply_ch_->push(msg);
+
             last_applied_ = i;
         }
     }
@@ -720,12 +748,12 @@ void Raft::Run() {
     server->Wait();
 }
 
-int main(int argc, char** argv) {
-    if(argc < 3) {
-        std::cerr << "Usage: " << argv[0] << " <node_id> <node.json>" << std::endl;
-        return 1;
-    }
-    std::unique_ptr<Raft> raftNode = std::make_unique<Raft>(atoi(argv[1]), argv[2]);
-    raftNode->Run();
-    return 0;
-}
+// int main(int argc, char** argv) {
+//     if(argc < 3) {
+//         std::cerr << "Usage: " << argv[0] << " <node_id> <node.json>" << std::endl;
+//         return 1;
+//     }
+//     std::unique_ptr<Raft> raftNode = std::make_unique<Raft>(atoi(argv[1]), argv[2]);
+//     raftNode->Run();
+//     return 0;
+// }

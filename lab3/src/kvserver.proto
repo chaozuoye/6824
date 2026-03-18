@@ -1,0 +1,43 @@
+// kvserver.proto
+// 定义 KVServer 键值存储服务的 gRPC 服务和消息格式
+syntax = "proto3";
+
+package KV_Server;
+
+// KV 服务定义，包含客户端与 KVServer 交互的三个核心接口
+service KVService {
+    // Get RPC：客户端获取键对应的值（只读操作）
+    rpc Get(GetRequest) returns (GetResponse);
+    
+    // PutAppend RPC：客户端执行 Put 或 Append 操作（写操作）
+    rpc PutAppend(PutAppendRequest) returns (PutAppendResponse);
+}
+
+// Get 请求消息
+message GetRequest {
+    string key = 1;           // 要查询的键
+    int64 client_id = 2;      // 客户端唯一标识（用于去重）
+    int64 request_id = 3;     // 请求序列号（单调递增，用于去重）
+}
+
+// Get 响应消息
+message GetResponse {
+    string value = 1;         // 键对应的值（如果成功）
+    bool success = 2;
+    string err = 3;           // 错误信息（如果失败）
+}
+
+// PutAppend 请求消息
+message PutAppendRequest {
+    string op = 1;            // 操作类型："Put" 或 "Append"
+    string key = 2;           // 要操作的键
+    string value = 3;         // 值（Put 时是完整值，Append 时是要追加的内容）
+    int64 client_id = 4;      // 客户端唯一标识（用于去重）
+    int64 request_id = 5;     // 请求序列号（单调递增，用于去重）
+}
+
+// PutAppend 响应消息
+message PutAppendResponse {
+    bool success = 1;
+    string err = 2;
+}
